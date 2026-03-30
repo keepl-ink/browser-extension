@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { ext } from "@/lib/ext";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/AppContext";
 import CurrentPageCard from "../components/CurrentPageCard";
@@ -35,7 +36,7 @@ export default function SavedLinksView() {
 	}
 
 	function handleOpen(url: string) {
-		chrome.tabs.create({ url });
+		ext.tabs.create({ url });
 		setContextMenu(null);
 	}
 

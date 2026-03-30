@@ -2,7 +2,7 @@
  * Central app store.
  *
  * Single source of truth for all extension state. Reads the initial values
- * from chrome.storage, keeps them reactive via onChanged, and exposes typed
+ * from extension storage, keeps them reactive via onChanged, and exposes typed
  * action methods that views can call without knowing about storage at all.
  *
  * Wrap the app with <AppProvider> and consume with useAppStore().
@@ -18,6 +18,7 @@ import {
 	useState,
 } from "react";
 import { onServerUrlChanged, onUrlRemoved, onUrlSaved } from "@/lib/callbacks";
+import { ext, type ExtensionStorageChange } from "@/lib/ext";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -36,7 +37,7 @@ export interface AppSettings {
 	keepLinkApiKey: string;
 	/** Base URL for a self-hosted custom backend. */
 	serverUrl: string;
-	/** Bearer token for the custom backend. Stored in chrome.storage.local,
+	/** Bearer token for the custom backend. Stored in extension local storage,
 	 *  sandboxed to this extension only. */
 	authToken: string;
 }
@@ -82,7 +83,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
 	// Load initial values and subscribe to changes from any context
 	// (background, popup, another panel, etc.)
 	useEffect(() => {
-		chrome.storage.local
+		ext.storage.local
 			.get(["savedUrls", "syncMode", "keepLinkApiKey", "serverUrl", "authToken"])
 			.then((result) => {
 				setSavedUrls((result.savedUrls as SavedUrl[]) ?? []);
@@ -95,8 +96,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
 			});
 
 		const listener = (
-			changes: Record<string, chrome.storage.StorageChange>,
+			changes: Record<string, ExtensionStorageChange>,
+			areaName: string,
 		) => {
+			if (areaName !== "local") return;
 			if (changes.savedUrls)
 				setSavedUrls((changes.savedUrls.newValue as SavedUrl[]) ?? []);
 			if (changes.syncMode)
@@ -109,34 +112,34 @@ export function AppProvider({ children }: { children: ReactNode }) {
 				setSettings((s) => ({ ...s, authToken: (changes.authToken.newValue as string) ?? "" }));
 		};
 
-		chrome.storage.onChanged.addListener(listener);
-		return () => chrome.storage.onChanged.removeListener(listener);
+		ext.storage.onChanged.addListener(listener);
+		return () => ext.storage.onChanged.removeListener(listener);
 	}, []);
 
 	// Always reads from storage before writing to avoid stale-closure races.
 	// Uses settingsRef so the callbacks always have fresh auth credentials.
 	const addUrl = useCallback(async (url: string, name: string) => {
 		if (!url.startsWith("http")) return;
-		const result = await chrome.storage.local.get("savedUrls");
+		const result = await ext.storage.local.get("savedUrls");
 		const current: SavedUrl[] = (result.savedUrls as SavedUrl[]) ?? [];
 		if (current.some((e) => e.url === url)) return;
 		const entry: SavedUrl = { url, name, savedAt: Date.now() };
-		await chrome.storage.local.set({ savedUrls: [...current, entry] });
+		await ext.storage.local.set({ savedUrls: [...current, entry] });
 		await onUrlSaved(entry, settingsRef.current);
 	}, []);
 
 	const removeUrl = useCallback(async (url: string) => {
-		const result = await chrome.storage.local.get("savedUrls");
+		const result = await ext.storage.local.get("savedUrls");
 		const current: SavedUrl[] = (result.savedUrls as SavedUrl[]) ?? [];
 		const updated = current.filter((e) => e.url !== url);
-		await chrome.storage.local.set({ savedUrls: updated });
+		await ext.storage.local.set({ savedUrls: updated });
 		await onUrlRemoved(url, settingsRef.current);
 	}, []);
 
 	const saveSettings = useCallback(
 		async (next: Partial<AppSettings>) => {
 			const merged: AppSettings = { ...settings, ...next };
-			await chrome.storage.local.set({
+			await ext.storage.local.set({
 				syncMode: merged.syncMode,
 				keepLinkApiKey: merged.keepLinkApiKey,
 				serverUrl: merged.serverUrl,

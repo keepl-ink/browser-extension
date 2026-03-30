@@ -12,7 +12,7 @@
  *  "custom"   → routes to the user-supplied serverUrl with their authToken
  *
  * Auth: every request receives `Authorization: Bearer <token>` when a token
- * is present. Tokens are stored in chrome.storage.local (sandboxed to this
+ * is present. Tokens are stored in extension local storage (sandboxed to this
  * extension, never put in URLs).
  */
 

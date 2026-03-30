@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FieldDescription, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { ext } from "@/lib/ext";
 import { cn } from "@/lib/utils";
 import type { SyncMode } from "@/store/AppContext";
 import { useAppStore } from "@/store/AppContext";
@@ -136,7 +137,7 @@ export default function SettingsView() {
 									type="button"
 									className="underline underline-offset-2 hover:text-foreground transition-colors"
 									onClick={() =>
-										chrome.tabs.create({
+										ext.tabs.create({
 											url: "https://keepl.ink/dashboard/api-keys",
 										})
 									}
@@ -153,7 +154,7 @@ export default function SettingsView() {
 							size="sm"
 							className="w-fit gap-1.5"
 							onClick={() =>
-								chrome.tabs.create({ url: "https://keepl.ink/login" })
+								ext.tabs.create({ url: "https://keepl.ink/login" })
 							}
 						>
 							Login to keepl.ink

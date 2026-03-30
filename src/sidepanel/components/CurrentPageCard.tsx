@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
+import type Browser from "webextension-polyfill";
 import { Button } from "@/components/ui/button";
+import { ext, type ExtensionTab, type ExtensionTabChangeInfo } from "@/lib/ext";
 import { cn } from "@/lib/utils";
 import { useAppStore } from "@/store/AppContext";
 
@@ -28,8 +30,8 @@ export default function CurrentPageCard() {
 	function loadActiveTab() {
 		if (undoTimer.current) { clearTimeout(undoTimer.current); undoTimer.current = null; }
 		setStatus("loading");
-		chrome.tabs.query({ active: true, currentWindow: true }).then(([t]) => {
-			if (!t?.url?.startsWith("http")) { setStatus("idle"); return; }
+		ext.tabs.query({ active: true, currentWindow: true }).then(([t]) => {
+			if (!t?.url?.startsWith("http")) { setTab(null); setStatus("idle"); return; }
 			setTab({ url: t.url, name: t.title ?? t.url, favIconUrl: t.favIconUrl });
 			// status will be resolved by the savedUrls effect below
 		});
@@ -39,23 +41,23 @@ export default function CurrentPageCard() {
 		loadActiveTab();
 
 		// User switches to a different tab
-		const onActivated = () => loadActiveTab();
-		chrome.tabs.onActivated.addListener(onActivated);
+		const onActivated = (_activeInfo: Browser.Tabs.OnActivatedActiveInfoType) => loadActiveTab();
+		ext.tabs.onActivated.addListener(onActivated);
 
 		// Active tab navigates to a new URL or finishes loading a new title
 		const onUpdated = (
 			_tabId: number,
-			changeInfo: { status?: string; title?: string },
-			updatedTab: chrome.tabs.Tab,
+			changeInfo: ExtensionTabChangeInfo,
+			updatedTab: ExtensionTab,
 		) => {
 			if (!updatedTab.active) return;
 			if (changeInfo.status === "complete" || changeInfo.title) loadActiveTab();
 		};
-		chrome.tabs.onUpdated.addListener(onUpdated);
+		ext.tabs.onUpdated.addListener(onUpdated);
 
 		return () => {
-			chrome.tabs.onActivated.removeListener(onActivated);
-			chrome.tabs.onUpdated.removeListener(onUpdated);
+			ext.tabs.onActivated.removeListener(onActivated);
+			ext.tabs.onUpdated.removeListener(onUpdated);
 		};
 	}, []); // eslint-disable-line react-hooks/exhaustive-deps
 

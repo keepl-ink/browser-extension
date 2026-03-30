@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { onUrlRemoved, onUrlSaved } from "@/lib/callbacks";
+import { ext, openExtensionPanel, panelLabel } from "@/lib/ext";
 import type { AppSettings, SavedUrl } from "@/store/AppContext";
 
 interface TabInfo {
@@ -17,8 +18,8 @@ export default function App() {
 	const [status, setStatus] = useState<Status>("loading");
 
 	useEffect(() => {
-		chrome.tabs.query({ active: true, currentWindow: true }).then(async ([t]) => {
-			if (!t?.url?.startsWith("http") || !t.windowId) {
+		ext.tabs.query({ active: true, currentWindow: true }).then(async ([t]) => {
+			if (!t?.url?.startsWith("http") || t.windowId == null) {
 				setStatus("idle");
 				return;
 			}
@@ -30,7 +31,7 @@ export default function App() {
 			};
 			setTab(info);
 
-			const result = await chrome.storage.local.get("savedUrls");
+			const result = await ext.storage.local.get("savedUrls");
 			const saved: SavedUrl[] = (result.savedUrls as SavedUrl[]) ?? [];
 			setStatus(saved.some((e) => e.url === info.url) ? "saved" : "idle");
 		});
@@ -38,30 +39,34 @@ export default function App() {
 
 	async function handleSave() {
 		if (!tab) return;
-		const result = await chrome.storage.local.get("savedUrls");
+		const result = await ext.storage.local.get("savedUrls");
 		const saved: SavedUrl[] = (result.savedUrls as SavedUrl[]) ?? [];
 		if (saved.some((e) => e.url === tab.url)) return;
 		const entry: SavedUrl = { url: tab.url, name: tab.name, savedAt: Date.now() };
-		await chrome.storage.local.set({ savedUrls: [...saved, entry] });
-		const s = await chrome.storage.local.get(["syncMode", "keepLinkApiKey", "serverUrl", "authToken"]);
+		await ext.storage.local.set({ savedUrls: [...saved, entry] });
+		const s = await ext.storage.local.get(["syncMode", "keepLinkApiKey", "serverUrl", "authToken"]);
 		await onUrlSaved(entry, { syncMode: (s.syncMode ?? "local") as AppSettings["syncMode"], keepLinkApiKey: (s.keepLinkApiKey ?? "") as string, serverUrl: (s.serverUrl ?? "") as string, authToken: (s.authToken ?? "") as string });
 		setStatus("saved");
 	}
 
 	async function handleUnsave() {
 		if (!tab) return;
-		const result = await chrome.storage.local.get("savedUrls");
+		const result = await ext.storage.local.get("savedUrls");
 		const saved: SavedUrl[] = (result.savedUrls as SavedUrl[]) ?? [];
-		await chrome.storage.local.set({ savedUrls: saved.filter((e) => e.url !== tab.url) });
-		const s = await chrome.storage.local.get(["syncMode", "keepLinkApiKey", "serverUrl", "authToken"]);
+		await ext.storage.local.set({ savedUrls: saved.filter((e) => e.url !== tab.url) });
+		const s = await ext.storage.local.get(["syncMode", "keepLinkApiKey", "serverUrl", "authToken"]);
 		await onUrlRemoved(tab.url, { syncMode: (s.syncMode ?? "local") as AppSettings["syncMode"], keepLinkApiKey: (s.keepLinkApiKey ?? "") as string, serverUrl: (s.serverUrl ?? "") as string, authToken: (s.authToken ?? "") as string });
 		setStatus("idle");
 	}
 
 	async function handleOpenPanel() {
 		if (!tab) return;
-		await chrome.sidePanel.open({ windowId: tab.windowId });
-		window.close();
+		try {
+			await openExtensionPanel(tab.windowId);
+			window.close();
+		} catch (error) {
+			console.error("Failed to open extension panel", error);
+		}
 	}
 
 	const favicon = tab?.favIconUrl
@@ -123,7 +128,7 @@ export default function App() {
 					onClick={handleOpenPanel}
 					disabled={status === "loading"}
 				>
-					Open panel
+					Open {panelLabel}
 					<PanelRightIcon className="size-3.5" />
 				</Button>
 			</div>
