@@ -1,104 +1,118 @@
-import { createSignal, For, onMount } from "solid-js";
+import { useRef, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { onChatMessage } from "@/lib/callbacks";
+import { cn } from "@/lib/utils";
+import { useAppStore } from "@/store/AppContext";
 
 interface Message {
-	role: "user" | "remy";
+	role: "user" | "keepl";
 	text: string;
 }
 
 export default function RemyView() {
-	const [messages, setMessages] = createSignal<Message[]>([
-		{ role: "remy", text: "Hi! I'm Remy. Ask me anything about your saved pages." },
+	const { savedUrls, settings } = useAppStore();
+	const [messages, setMessages] = useState<Message[]>([
+		{
+			role: "keepl",
+			text: "Hi! I'm Keepl. Ask me anything about your saved pages.",
+		},
 	]);
-	const [input, setInput] = createSignal("");
-	const [serverUrl, setServerUrl] = createSignal("");
-	const [loading, setLoading] = createSignal(false);
-	let listRef: HTMLDivElement | undefined;
-
-	onMount(async () => {
-		const { serverUrl: stored = "" } = await chrome.storage.local.get("serverUrl");
-		setServerUrl(stored as string);
-		chrome.storage.onChanged.addListener((changes) => {
-			if (changes.serverUrl) setServerUrl(changes.serverUrl.newValue ?? "");
-		});
-	});
+	const [input, setInput] = useState("");
+	const [loading, setLoading] = useState(false);
+	const listRef = useRef<HTMLDivElement>(null);
 
 	function scrollToBottom() {
-		if (listRef) listRef.scrollTop = listRef.scrollHeight;
+		if (listRef.current)
+			listRef.current.scrollTop = listRef.current.scrollHeight;
 	}
 
 	async function send() {
-		const text = input().trim();
-		if (!text || loading()) return;
+		const text = input.trim();
+		if (!text || loading) return;
 
 		setMessages((m) => [...m, { role: "user", text }]);
 		setInput("");
 		setLoading(true);
-		scrollToBottom();
-
-		if (!serverUrl()) {
-			setMessages((m) => [
-				...m,
-				{ role: "remy", text: "No backend URL configured. Go to Settings to add one." },
-			]);
-			setLoading(false);
-			scrollToBottom();
-			return;
-		}
+		setTimeout(scrollToBottom, 0);
 
 		try {
-			const { savedUrls = [] } = await chrome.storage.local.get("savedUrls");
-			const res = await fetch(`${serverUrl()}/chat`, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify({ message: text, savedUrls }),
-			});
-			const data = await res.json();
-			setMessages((m) => [...m, { role: "remy", text: data.reply ?? "No response." }]);
-		} catch {
+			const reply = await onChatMessage(text, savedUrls, settings);
+			setMessages((m) => [...m, { role: "keepl", text: reply }]);
+		} catch (err) {
+			const isNoBackend = err instanceof Error && err.message === "no_backend";
 			setMessages((m) => [
 				...m,
-				{ role: "remy", text: "Couldn't reach the backend. Check your server URL in Settings." },
+				{
+					role: "keepl",
+					text: isNoBackend
+						? "No backend URL configured. Go to Settings to add one."
+						: "Couldn't reach the backend. Check your server URL in Settings.",
+				},
 			]);
 		}
 
 		setLoading(false);
-		scrollToBottom();
+		setTimeout(scrollToBottom, 0);
 	}
 
-	function onKeyDown(e: KeyboardEvent) {
+	function onKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
 		if (e.key === "Enter" && !e.shiftKey) {
 			e.preventDefault();
-			send();
+			void send();
 		}
 	}
 
 	return (
-		<div class="remy">
-			<div class="remy-messages" ref={listRef}>
-				<For each={messages()}>
-					{(msg) => (
-						<div class={`remy-msg remy-msg--${msg.role}`}>
-							<span>{msg.text}</span>
-						</div>
-					)}
-				</For>
-				{loading() && (
-					<div class="remy-msg remy-msg--remy remy-msg--loading">
-						<span class="dot" /><span class="dot" /><span class="dot" />
+		<div className="flex flex-col h-full">
+			{/* Messages */}
+			<div
+				ref={listRef}
+				className="flex-1 min-h-0 overflow-y-auto flex flex-col gap-2 p-3"
+			>
+				{messages.map((msg, i) => (
+					<div
+						key={i}
+						className={cn(
+							"max-w-[85%] px-3 py-2 rounded-2xl text-xs leading-relaxed break-words",
+							msg.role === "user"
+								? "self-end bg-primary text-primary-foreground rounded-br-sm"
+								: "self-start bg-secondary text-secondary-foreground border border-border rounded-bl-sm",
+						)}
+					>
+						{msg.text}
+					</div>
+				))}
+
+				{/* Typing indicator */}
+				{loading && (
+					<div className="self-start bg-secondary border border-border rounded-2xl rounded-bl-sm px-3.5 py-3 flex gap-1 items-center">
+						<span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:0ms]" />
+						<span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:150ms]" />
+						<span className="size-1.5 rounded-full bg-muted-foreground animate-bounce [animation-delay:300ms]" />
 					</div>
 				)}
 			</div>
-			<div class="remy-input-row">
+
+			{/* Input bar */}
+			<div className="flex gap-2 items-end px-3 py-2.5 border-t border-border bg-background shrink-0">
 				<textarea
-					rows="1"
+					rows={1}
 					placeholder="Ask Remy…"
-					value={input()}
-					onInput={(e) => setInput(e.currentTarget.value)}
+					value={input}
+					onChange={(e) => setInput(e.currentTarget.value)}
 					onKeyDown={onKeyDown}
+					className="flex-1 resize-none bg-secondary text-foreground text-xs leading-relaxed rounded-xl px-3 py-2 placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring/50 max-h-28 overflow-y-auto transition-shadow border border-transparent focus:border-ring/30"
 				/>
-				<button type="button" onClick={send} disabled={loading() || !input().trim()}>
-					<svg viewBox="0 0 20 20" fill="currentColor"><path d="M3.105 2.288a.75.75 0 00-.826.95l1.414 4.926A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.897 28.897 0 0015.293-7.155.75.75 0 000-1.114A28.897 28.897 0 003.105 2.288z"/></svg>
-				</button>
+				<Button
+					size="icon-sm"
+					onClick={() => void send()}
+					disabled={loading || !input.trim()}
+					className="shrink-0 mb-0.5"
+				>
+					<svg viewBox="0 0 20 20" fill="currentColor">
+						<path d="M3.105 2.288a.75.75 0 00-.826.95l1.414 4.926A1.5 1.5 0 005.135 9.25h6.115a.75.75 0 010 1.5H5.135a1.5 1.5 0 00-1.442 1.086l-1.414 4.926a.75.75 0 00.826.95 28.897 28.897 0 0015.293-7.155.75.75 0 000-1.114A28.897 28.897 0 003.105 2.288z" />
+					</svg>
+				</Button>
 			</div>
 		</div>
 	);

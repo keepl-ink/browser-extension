@@ -1,5 +1,4 @@
-import { createSignal, Show } from "solid-js";
-import "./App.css";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import RemyIcon from "@/icons/RemyIcon";
 import SaveAllIcon from "@/icons/SaveAllIcon";
 import SettingsIcon from "@/icons/SettingsIcon";
@@ -7,58 +6,45 @@ import RemyView from "./views/RemyView";
 import SavedLinksView from "./views/SavedLinksView";
 import SettingsView from "./views/SettingsView";
 
-type View = "saved" | "remy" | "settings";
-
-function App() {
-	const [view, setView] = createSignal<View>("saved");
+export default function App() {
 
 	return (
-		<div class="panel">
-			<header>
-				<span class="brand">Remembery</span>
-				<nav>
-					<button
-						type="button"
-						class={view() === "remy" ? "active" : ""}
-						onClick={() => setView("remy")}
-					>
+		<Tabs
+			defaultValue="saved"
+			className="h-screen bg-background text-foreground antialiased"
+		>
+			{/* Header */}
+			<header className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0">
+				<span className="text-sm font-semibold tracking-tight">Keepl.ink</span>
+				<TabsList className="h-auto p-0.5 gap-0">
+					<TabsTrigger value="remy" className="px-2.5 py-1 text-xs gap-1.5">
 						<RemyIcon />
 						Remy
-					</button>
-					<button
-						type="button"
-						class={view() === "saved" ? "active" : ""}
-						onClick={() => setView("saved")}
-					>
+					</TabsTrigger>
+					<TabsTrigger value="saved" className="px-2.5 py-1 text-xs gap-1.5">
 						<SaveAllIcon />
 						Saved
-					</button>
-					<button
-						type="button"
-						class={view() === "settings" ? "active" : ""}
-						onClick={() => setView("settings")}
-					>
+					</TabsTrigger>
+					<TabsTrigger value="settings" className="px-2.5 py-1 text-xs gap-1.5">
 						<SettingsIcon />
 						Settings
-					</button>
-				</nav>
+					</TabsTrigger>
+				</TabsList>
 			</header>
 
-			<main>
-				<Show when={view() === "saved"}>
-					<SavedLinksView />
-				</Show>
-
-				<Show when={view() === "remy"}>
-					<RemyView />
-				</Show>
-
-				<Show when={view() === "settings"}>
-					<SettingsView />
-				</Show>
-			</main>
-		</div>
+			{/* Views */}
+			<TabsContent value="remy" className="mt-0 min-h-0 h-[calc(100vh-3rem)]">
+				<RemyView />
+			</TabsContent>
+			<TabsContent value="saved" className="mt-0 min-h-0 h-[calc(100vh-3rem)]">
+				<SavedLinksView />
+			</TabsContent>
+			<TabsContent
+				value="settings"
+				className="mt-0 min-h-0 h-[calc(100vh-3rem)]"
+			>
+				<SettingsView />
+			</TabsContent>
+		</Tabs>
 	);
 }
-
-export default App;
