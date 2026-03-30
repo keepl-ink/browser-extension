@@ -14,7 +14,7 @@ export default function RemyView() {
 	const [messages, setMessages] = useState<Message[]>([
 		{
 			role: "keepl",
-			text: "Hi! I'm Keepl. Ask me anything about your saved pages.",
+			text: "Hi! I'm Remy. Ask me anything about your saved pages.",
 		},
 	]);
 	const [input, setInput] = useState("");
