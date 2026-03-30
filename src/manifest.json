@@ -27,7 +27,7 @@
 		"default_path": "src/sidebar.html"
 	},
 
-	"permissions": ["{{chrome}}.sidePanel"],
+	"permissions": ["activeTab", "storage", "tabs", "{{chrome}}.sidePanel"],
 
 	"background": {
 		"{{chrome}}.service_worker": "src/background.ts",
