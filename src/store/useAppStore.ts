@@ -3,10 +3,15 @@ import { create } from "zustand";
 import { onUrlRemoved, onUrlSaved } from "@/lib/callback";
 import {
 	clearLegacySettingsFromLocal,
+	localSavedUrlsStorage,
 	readLegacySettingsFromLocal,
-	savedUrlsStorageAdapter,
-	settingsStorageAdapter,
-	sidebarViewStorageAdapter,
+	savedUrlsCacheStorage,
+	settingsStorage,
+	sidebarViewStorage,
+} from "@/lib/extension-storage";
+import {
+	getUrlStorageAdapter,
+	validateUrlStorageAdapter,
 } from "@/lib/storage-adapters";
 import {
 	DEFAULT_SETTINGS,
@@ -74,12 +79,18 @@ function normalizeSidebarView(view?: SidebarView) {
 		: DEFAULT_SIDEBAR_VIEW;
 }
 
+async function loadSavedUrlsForSettings(settings: AppSettings) {
+	return normalizeSavedUrls(
+		await getUrlStorageAdapter(settings).listUrls(settings),
+	);
+}
+
 async function hydrateStore() {
-	const [savedUrls, storedSettings, storedSidebarView, legacySettings] =
+	const [cachedSavedUrls, storedSettings, storedSidebarView, legacySettings] =
 		await Promise.all([
-			savedUrlsStorageAdapter.get(),
-			settingsStorageAdapter.get(),
-			sidebarViewStorageAdapter.get(),
+			savedUrlsCacheStorage.get(),
+			settingsStorage.get(),
+			sidebarViewStorage.get(),
 			readLegacySettingsFromLocal(),
 		]);
 
@@ -90,12 +101,21 @@ async function hydrateStore() {
 			: normalizeSettings(storedSettings);
 
 	if (legacySettings) {
-		await settingsStorageAdapter.set(settings);
+		await settingsStorage.set(settings);
 		await clearLegacySettingsFromLocal();
 	}
 
+	let savedUrls = normalizeSavedUrls(cachedSavedUrls);
+
+	try {
+		savedUrls = await loadSavedUrlsForSettings(settings);
+		await savedUrlsCacheStorage.set(savedUrls);
+	} catch (error) {
+		console.error("Failed to load saved URLs from the active storage adapter.", error);
+	}
+
 	return {
-		savedUrls: normalizeSavedUrls(savedUrls),
+		savedUrls,
 		settings,
 		sidebarView: normalizeSidebarView(storedSidebarView),
 	};
@@ -108,16 +128,28 @@ function bindSubscriptions(setState: (partial: Partial<AppStore>) => void) {
 
 	subscriptionsBound = true;
 
-	savedUrlsStorageAdapter.subscribe((savedUrls) => {
+	savedUrlsCacheStorage.subscribe((savedUrls) => {
 		setState({ savedUrls: normalizeSavedUrls(savedUrls) });
 	});
 
-	settingsStorageAdapter.subscribe((settings) => {
+	settingsStorage.subscribe((settings) => {
 		setState({ settings: normalizeSettings(settings) });
 	});
 
-	sidebarViewStorageAdapter.subscribe((sidebarView) => {
+	sidebarViewStorage.subscribe((sidebarView) => {
 		setState({ sidebarView: normalizeSidebarView(sidebarView) });
+	});
+
+	localSavedUrlsStorage.subscribe((savedUrls) => {
+		if (useAppStore.getState().settings.syncMode !== "local") {
+			return;
+		}
+
+		const normalizedSavedUrls = normalizeSavedUrls(savedUrls);
+		void savedUrlsCacheStorage.set(normalizedSavedUrls).catch((error) => {
+			console.error("Failed to sync local saved URLs into the cache.", error);
+		});
+		setState({ savedUrls: normalizedSavedUrls });
 	});
 }
 
@@ -153,12 +185,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
 			name: name.trim() || url,
 			savedAt: Date.now(),
 		};
-		const nextSavedUrls = normalizeSavedUrls([
-			...get().savedUrls.filter((savedUrl) => savedUrl.url !== url),
-			entry,
-		]);
+		const nextSavedUrls = normalizeSavedUrls(
+			await getUrlStorageAdapter(get().settings).saveUrl(entry, get().settings),
+		);
 
-		await savedUrlsStorageAdapter.set(nextSavedUrls);
+		await savedUrlsCacheStorage.set(nextSavedUrls);
 		set({ savedUrls: nextSavedUrls });
 
 		void onUrlSaved(entry, get().settings).catch((error) => {
@@ -171,11 +202,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
 	async removeUrl(url) {
 		await get().initialize();
 
-		const nextSavedUrls = get().savedUrls.filter(
-			(savedUrl) => savedUrl.url !== url,
+		const nextSavedUrls = normalizeSavedUrls(
+			await getUrlStorageAdapter(get().settings).removeUrl(url, get().settings),
 		);
 
-		await savedUrlsStorageAdapter.set(nextSavedUrls);
+		await savedUrlsCacheStorage.set(nextSavedUrls);
 		set({ savedUrls: nextSavedUrls });
 
 		void onUrlRemoved(url, get().settings).catch((error) => {
@@ -191,15 +222,22 @@ export const useAppStore = create<AppStore>((set, get) => ({
 			...settings,
 		});
 
-		await settingsStorageAdapter.set(nextSettings);
-		set({ settings: nextSettings });
+		await validateUrlStorageAdapter(nextSettings);
+		const nextSavedUrls = await loadSavedUrlsForSettings(nextSettings);
+
+		await settingsStorage.set(nextSettings);
+		await savedUrlsCacheStorage.set(nextSavedUrls);
+		set({
+			settings: nextSettings,
+			savedUrls: nextSavedUrls,
+		});
 
 		return nextSettings;
 	},
 
 	async setSidebarView(view) {
 		const nextView = normalizeSidebarView(view);
-		await sidebarViewStorageAdapter.set(nextView);
+		await sidebarViewStorage.set(nextView);
 		set({ sidebarView: nextView });
 	},
 

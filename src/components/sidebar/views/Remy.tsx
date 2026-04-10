@@ -39,14 +39,14 @@ export default function RemyView() {
 			const reply = await onChatMessage(text, savedUrls, settings);
 			setMessages((m) => [...m, { role: "keepl", text: reply }]);
 		} catch (err) {
-			const isNoBackend = err instanceof Error && err.message === "no_backend";
 			setMessages((m) => [
 				...m,
 				{
 					role: "keepl",
-					text: isNoBackend
-						? "No backend URL configured. Go to Settings to add one."
-						: "Couldn't reach the backend. Check your server URL in Settings.",
+					text:
+						err instanceof Error
+							? err.message
+							: "Couldn't reach the configured backend. Check your settings.",
 				},
 			]);
 		}
