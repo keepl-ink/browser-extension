@@ -14,6 +14,7 @@ type StorageChangeListener = (
 
 type BrowserTab = {
 	active?: boolean;
+	id?: number;
 	url?: string;
 	title?: string;
 	favIconUrl?: string;
@@ -35,6 +36,14 @@ type ExtensionStorageArea = {
 };
 
 type ExtensionApi = {
+	scripting?: {
+		executeScript: (injection: {
+			target: {
+				tabId: number;
+			};
+			func: () => string | null;
+		}) => Promise<Array<{ result?: unknown }>>;
+	};
 	storage: {
 		local: ExtensionStorageArea;
 		sync: ExtensionStorageArea;
@@ -45,12 +54,16 @@ type ExtensionApi = {
 		};
 	};
 	tabs: {
-		query: (
-			queryInfo: chrome.tabs.QueryInfo,
-		) => Promise<BrowserTab[]>;
+		query: (queryInfo: chrome.tabs.QueryInfo) => Promise<BrowserTab[]>;
 		create: (
 			createProperties: chrome.tabs.CreateProperties,
 		) => Promise<BrowserTab | undefined>;
+		executeScript?: (
+			tabId: number,
+			details: {
+				code: string;
+			},
+		) => Promise<unknown[]>;
 		onActivated?: {
 			addListener: (listener: () => void) => void;
 			removeListener: (listener: () => void) => void;
@@ -119,18 +132,63 @@ export function getFaviconUrl(url: string, favIconUrl?: string) {
 	if (favIconUrl) {
 		return favIconUrl;
 	}
-
-	return `https://www.google.com/s2/favicons?domain=${getHostname(url)}&sz=64`;
+	const hostname = getHostname(url);
+	return `https://icons.duckduckgo.com/ip3/${hostname}.ico`;
 }
 
-function normalizeTab(tab?: BrowserTab): CurrentTabInfo | null {
+async function readHeadTitleFromTab(tab: BrowserTab) {
+	if (tab.id == null) {
+		return null;
+	}
+
+	const api = getOptionalExtensionApi();
+
+	if (!api) {
+		return null;
+	}
+
+	try {
+		if (api.scripting?.executeScript) {
+			const [injectionResult] = await api.scripting.executeScript({
+				target: { tabId: tab.id },
+				func: () =>
+					document.head?.querySelector("title")?.textContent?.trim() ||
+					document.title?.trim() ||
+					null,
+			});
+
+			return typeof injectionResult?.result === "string"
+				? injectionResult.result.trim()
+				: null;
+		}
+
+		if (api.tabs.executeScript) {
+			const [result] = await api.tabs.executeScript(tab.id, {
+				code: `
+					(document.head?.querySelector("title")?.textContent || document.title || "")
+						.trim();
+				`,
+			});
+
+			return typeof result === "string" ? result.trim() : null;
+		}
+	} catch {
+		return null;
+	}
+
+	return null;
+}
+
+async function normalizeTab(tab?: BrowserTab): Promise<CurrentTabInfo | null> {
 	if (!tab?.url || !isSavableUrl(tab.url) || tab.windowId == null) {
 		return null;
 	}
 
+	const headTitle = await readHeadTitleFromTab(tab);
+
 	return {
 		url: tab.url,
-		name: tab.title?.trim() || getHostname(tab.url),
+		name: headTitle || tab.title?.trim() || getHostname(tab.url),
 		favIconUrl: tab.favIconUrl || undefined,
 		windowId: tab.windowId,
 	};
@@ -142,7 +200,7 @@ export async function queryActiveTab() {
 		currentWindow: true,
 	});
 
-	return normalizeTab(tab);
+	return await normalizeTab(tab);
 }
 
 export function subscribeToActiveTabChanges(onChange: () => void) {
@@ -159,7 +217,11 @@ export function subscribeToActiveTabChanges(onChange: () => void) {
 			return;
 		}
 
-		if (changeInfo.status === "complete" || changeInfo.title || changeInfo.url) {
+		if (
+			changeInfo.status === "complete" ||
+			changeInfo.title ||
+			changeInfo.url
+		) {
 			onChange();
 		}
 	};

@@ -5,7 +5,7 @@ const KEEPLINK_API_BASE_URL = "https://api.keepl.ink";
 const CUSTOM_HEALTH_PATH = "/api/extension/verify";
 const CUSTOM_URLS_PATH = "/api/keeps";
 const CUSTOM_CHAT_PATH = "/api/extension/chat";
-const KEEPLINK_URLS_PATH = "/v1/urls";
+const KEEPLINK_URLS_PATH = "/v1/keeps";
 const KEEPLINK_CHAT_PATH = "/v1/chat";
 
 function formatSavedUrl(entry: SavedUrl) {
@@ -26,6 +26,7 @@ function normalizeSavedUrl(entry: unknown): SavedUrl | null {
 	}
 
 	const value = entry as Partial<SavedUrl> & {
+		name?: string;
 		title?: string;
 		label?: string;
 	};
@@ -168,10 +169,11 @@ async function requestSaveUrl(
 ) {
 	const baseUrl = getBackendBaseUrl(kind, settings);
 	const headers = getBackendHeaders(kind, settings);
+	const { name, ...rest } = entry;
 	const response = await fetch(getEndpoint(baseUrl, getUrlsPath(kind)), {
 		method: "POST",
 		headers,
-		body: JSON.stringify(entry),
+		body: JSON.stringify({ ...rest, title: entry.name }),
 	});
 
 	if (!response.ok) {
